@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampl
 from torch.utils.data.distributed import DistributedSampler
 from tqdm.auto import tqdm, trange
 from transformers.models.t5 import T5Config, T5ForConditionalGeneration, T5Tokenizer
+from transformers import ByT5Tokenizer, AutoTokenizer
 from transformers.optimization import (
     get_constant_schedule,
     get_constant_schedule_with_warmup,
@@ -53,6 +54,7 @@ def chunks(lst, n):
 MODEL_CLASSES = {
     "t5": (T5Config, T5ForConditionalGeneration),
     "mt5": (MT5Config, MT5ForConditionalGeneration),
+    "byt5": (T5Config, T5ForConditionalGeneration)
 }
 
 
@@ -119,19 +121,21 @@ class T5Model:
         self.results = {}
 
         config_class, model_class = MODEL_CLASSES[model_type]
-
         if model_name is None:
             self.config = self.args.config
             self.model = model_class(config=self.config)
         else:
-            self.config = config_class.from_pretrained(model_name, **self.args.config)
-            self.model = model_class.from_pretrained(model_name, config=self.config)
-
-        if isinstance(tokenizer, T5Tokenizer):
-            self.tokenizer = tokenizer
-            self.model.resize_token_embeddings(len(self.tokenizer))
-        else:
-            self.tokenizer = T5Tokenizer.from_pretrained(model_name, truncate=True)
+            if model_type != "byt5":
+                self.config = config_class.from_pretrained(model_name, **self.args.config)
+                self.model = model_class.from_pretrained(model_name, config=self.config)
+            else:
+                self.config = config_class.from_pretrained(model_name, **self.args.config)
+                self.model = model_class.from_pretrained(model_name)
+                self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        if model_type != "byt5":
+            if isinstance(tokenizer, T5Tokenizer):
+                self.tokenizer = tokenizer
+                self.model.resize_token_embeddings(len(self.tokenizer))
 
         if self.args.dynamic_quantize:
             self.model = torch.quantization.quantize_dynamic(
